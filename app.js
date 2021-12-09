@@ -265,12 +265,12 @@ async function processMessage(message) {
           assert(sign_data.ops && sign_data.ops.length >0, "invalid data (ops)")
           assert(sign_data.broadcast!=undefined, "invalid data (broadcast)")
 
+          const key_private = getPrivateKey(payload.account, sign_data.key_type)
           let approve = false
           // WARNING: A PKSA running in service mode should NOT allow operations requiring the active key
           //          Bypass the following test at your own risk.
           if(sign_data.key_type!="active") {
             // Check if the PKSA stores the requested private key
-            const key_private = getPrivateKey(payload.account, sign_data.key_type)
             if(key_private) {
               // NOTE: A PKSA with a UI should ask for user approval here
               approve = true
