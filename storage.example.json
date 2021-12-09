@@ -1,0 +1,15 @@
+{
+	"pksa_name": "MyPKSA",
+	"auto_approve_auth_req": false,
+	"auth_req_approve": false,
+	"auth_req_reject": false,
+	"sign_req_reject": false,
+	"challenge_req_reject": false,
+	"accounts": [
+		{
+			"name": "username",
+			"auths": [
+			]
+		}
+    ]
+}

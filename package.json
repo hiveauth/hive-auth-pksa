@@ -1,0 +1,17 @@
+{
+  "name": "test-ws",
+  "version": "1.0.0",
+  "description": "Test WebSocket Server",
+  "main": "server.js",
+  "scripts": {
+    "test": "dev"
+  },
+  "author": "arcange",
+  "license": "MIT",
+  "dependencies": {
+    "@hiveio/dhive": "^1.1.1",
+    "@hiveio/hive-js": "^2.0.4",
+    "express": "^4.17.1",
+    "ws": "^7.5.5"
+  }
+}

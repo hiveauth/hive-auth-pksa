@@ -1,0 +1,9 @@
+# Folders
+/node_modules
+
+# Files
+package-lock.json
+ecosystem.config.js
+
+storage.json
+keys.json
