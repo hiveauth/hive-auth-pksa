@@ -1,7 +1,7 @@
 {
   "name": "test-ws",
-  "version": "1.0.0",
-  "description": "Test WebSocket Server",
+  "version": "1.0.1",
+  "description": "Hive Authentication Services - PKSA Service",
   "main": "server.js",
   "scripts": {
     "test": "dev"
