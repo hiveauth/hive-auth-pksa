@@ -14,7 +14,7 @@ const hiveClient = new Client(hiveAPI)
 
 const KEY_TYPES = ["posting","active","memo"]
 
-const HAS_PROTOCOL = 0.4 // supported HAS protocol version
+const HAS_PROTOCOL = 0.5 // supported HAS protocol version
 const HAS_SERVER = "wss://hive-auth.arcange.eu"
 
 let wsClient = undefined
@@ -180,7 +180,7 @@ async function processMessage(message) {
               // Decrypt data received with off-band app encryption key
               const auth_req_data = JSON.parse(CryptoJS.AES.decrypt(payload.data,auth_key).toString(CryptoJS.enc.Utf8))
               // Check if we received a token and if it's still valid
-              const validToken = auth_req_data.token && account.auths.find(o => o.token==auth_req_data.token && o.expire > Date.now())
+              const validToken = payload.token && account.auths.find(o => o.token==payload.token && o.expire > Date.now())
               if(validToken) {
                 // Token is valid, reuse it and approve auth_req
                 approve = true
