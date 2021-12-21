@@ -220,6 +220,8 @@ async function processMessage(message) {
                       app:auth_req_data.app.name,
                       ts_create:datetoISO(new Date()),
                       ts_expire:datetoISO(new Date(auth_ack_data.expire)) })
+                } else {
+                  validToken.ts_lastused = datetoISO(new Date())
                 }
               } else {
                 if(dataStorage.auth_req_reject) {
