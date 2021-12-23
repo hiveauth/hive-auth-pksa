@@ -18,7 +18,7 @@ The `storage.json` file is where the PKSA will store its configuration, the acco
 
 ```
 {
-	"pksa_name": string
+    "pksa_name": string
     "auth_req_secret": string (optional)
     "auth_req_approve": boolean
     "auth_req_reject": boolean
@@ -59,7 +59,7 @@ The `storage.json` file is where the PKSA will store its configuration, the acco
 
 ```
 {
-	"pksa_name": "MyPKSA",
+    "pksa_name": "MyPKSA",
     "auth_req_secret": "A.v3ry-$tr0nG/And>$3cUr3.$3Cr3t-K3Y",
 	"auth_req_approve": false,
 	"auth_req_reject": false,
