@@ -61,10 +61,10 @@ The `storage.json` file is where the PKSA will store its configuration, the acco
 {
     "pksa_name": "MyPKSA",
     "auth_req_secret": "A.v3ry-$tr0nG/And>$3cUr3.$3Cr3t-K3Y",
-	"auth_req_approve": false,
-	"auth_req_reject": false,
-	"sign_req_reject": false,
-	"challenge_req_reject": false,
+    "auth_req_approve": false,
+    "auth_req_reject": false,
+    "sign_req_reject": false,
+    "challenge_req_reject": false,
     "token_timeout_days": 1,
     "accounts": [
         {
