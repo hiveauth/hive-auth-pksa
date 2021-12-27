@@ -14,7 +14,7 @@ const hiveClient = new Client(hiveAPI)
 
 const KEY_TYPES = ["posting","active","memo"]
 
-const HAS_PROTOCOL = 0.5 // supported HAS protocol version
+const HAS_PROTOCOL = 0.6 // supported HAS protocol version
 const HAS_SERVER = "wss://hive-auth.arcange.eu"
 
 let wsClient = undefined
@@ -226,8 +226,8 @@ async function processMessage(message) {
               } else {
                 if(dataStorage.auth_req_reject) {
                   // PKSA does not allow another PKSA to approve auth_req
-                  const challenge = CryptoJS.AES.encrypt(payload.uuid,auth_key).toString()
-                  HASSend(JSON.stringify({cmd:"auth_nack", uuid:payload.uuid, challenge:challenge}))
+                  const uuid_encrypted = CryptoJS.AES.encrypt(payload.uuid,auth_key).toString()
+                  HASSend(JSON.stringify({cmd:"auth_nack", uuid:payload.uuid, uuid_encrypted:uuid_encrypted}))
                 }
               }
               // clean storage from expired tokens
