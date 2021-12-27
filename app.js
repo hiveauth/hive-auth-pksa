@@ -226,8 +226,8 @@ async function processMessage(message) {
               } else {
                 if(dataStorage.auth_req_reject) {
                   // PKSA does not allow another PKSA to approve auth_req
-                  const uuid_encrypted = CryptoJS.AES.encrypt(payload.uuid,auth_key).toString()
-                  HASSend(JSON.stringify({cmd:"auth_nack", uuid:payload.uuid, uuid_encrypted:uuid_encrypted}))
+                  const data = CryptoJS.AES.encrypt(payload.uuid,auth_key).toString()
+                  HASSend(JSON.stringify({cmd:"auth_nack", uuid:payload.uuid, data:data}))
                 }
               }
               // clean storage from expired tokens
@@ -287,7 +287,7 @@ async function processMessage(message) {
               if(approve) {
                 if(sign_data.broadcast) {
                   const res = await hiveClient.broadcast.sendOperations(sign_data.ops, PrivateKey.from(key_private))
-                  HASSend(JSON.stringify({cmd:"sign_ack", uuid:payload.uuid, broadcast:payload.broadcast, data:res.id}))
+                  HASSend(JSON.stringify({cmd:"sign_ack", uuid:payload.uuid, data:res.id, broadcast:payload.broadcast}))
                 } else {
                   throw new Error("Transaction signing not enabled")
                   // To enable transaction signing, comment the above line uncomment the following code.
@@ -300,7 +300,8 @@ async function processMessage(message) {
               } else {
                 if(dataStorage.sign_req_reject) {
                   // PKSA does not allow another PKSA to approve sign_req
-                  HASSend(JSON.stringify({cmd:"sign_nack", uuid:payload.uuid}))
+                  const data = CryptoJS.AES.encrypt(payload.uuid,auth_key).toString()
+                  HASSend(JSON.stringify({cmd:"sign_nack", uuid:payload.uuid, data:data}))
                 }
               }
             } catch(e) {
@@ -358,7 +359,8 @@ async function processMessage(message) {
                   HASSend(JSON.stringify({cmd:"challenge_ack", uuid:payload.uuid, data:data}))
               } else {
                 if(dataStorage.challenge_req_reject) {
-                  HASSend(JSON.stringify({cmd:"challenge_nack", uuid:payload.uuid}))
+                  const data = CryptoJS.AES.encrypt(payload.uuid,auth_key).toString()
+                  HASSend(JSON.stringify({cmd:"challenge_nack", uuid:payload.uuid, data:data}))
                 }
               }
             } catch(e) {
