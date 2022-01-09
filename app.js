@@ -8,7 +8,8 @@ const WebSocket = require("ws")
 const hivejs = require('@hiveio/hive-js')
 const ecc = require("@hiveio/hive-js/lib/auth/ecc");
 
-const { Client, PrivateKey, Tansaction } = require('@hiveio/dhive')
+const { Client, PrivateKey, Tansaction } = require('@hiveio/dhive');
+const { TIMEOUT } = require("dns");
 const hiveAPI = "https://api.hive.blog"
 const hiveClient = new Client(hiveAPI)
 
@@ -16,8 +17,11 @@ const KEY_TYPES = ["posting","active","memo"]
 
 const HAS_PROTOCOL = 0.6 // supported HAS protocol version
 const HAS_SERVER = "wss://hive-auth.arcange.eu"
+const PING_RATE = 60 * 1000 			  // 1 minute
+const PING_TIMEOUT = 5 * PING_RATE  // 5 minutes
 
 let wsClient = undefined
+let wsHeartbeat = undefined
 let hasProtocol = undefined
 
 // NOTE: PKSA in service mode - Use local file as pksa storage
@@ -427,6 +431,28 @@ function startWebsocket() {
   wsClient.onerror = function(error) {
     log(`[error] ${error.message}`)
   }
+
+  wsClient.on("pong", () => {
+    // HAS server is alive
+    wsHeartbeat = Date.now()
+  })
 }
 
+function heartbeat() {
+  if(wsHeartbeat && wsHeartbeat + PING_TIMEOUT < Date.now()) {
+    // HAS server no more responding - try to reconnect
+    log("HAS Connection lost")
+    wsClient = undefined
+    startWebsocket()
+  } else {
+    if(wsClient) {
+      // Ping HAS server
+      wsClient.ping()
+    }
+  }
+}
+
+// Start PKSA
 startWebsocket()
+// Schedule HAS connection check
+const interval = setInterval(heartbeat,PING_RATE)
