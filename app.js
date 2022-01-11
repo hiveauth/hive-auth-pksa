@@ -15,8 +15,8 @@ const hiveClient = new Client(hiveAPI)
 
 const KEY_TYPES = ["posting","active","memo"]
 
-const HAS_PROTOCOL = 0.6 // supported HAS protocol version
 const HAS_SERVER = "wss://hive-auth.arcange.eu"
+const HAS_PROTOCOL = 0.7            // supported HAS protocol version
 const PING_RATE = 60 * 1000 			  // 1 minute
 const PING_TIMEOUT = 5 * PING_RATE  // 5 minutes
 
@@ -386,7 +386,7 @@ async function processMessage(message) {
 
 // HAS client
 function startWebsocket() {
-  log("PKSA started")
+  log(`PKSA started - protocol: ${HAS_PROTOCOL} `)
   //const wsClient = new WebSocket("ws://localhost:3000/")
   wsClient = new WebSocket(HAS_SERVER)
 
@@ -399,7 +399,7 @@ function startWebsocket() {
     }
     // Check HAS protocol version
     if(hasProtocol && HAS_PROTOCOL < hasProtocol) {
-      logerror("Unsupported HAS protocol")
+      logerror(`Unsupported HAS protocol - PKSA:${HAS_PROTOCOL} <-> HAS:${hasProtocol}`)
       // Stop PKSA
       wsClient.close()
     } else {
