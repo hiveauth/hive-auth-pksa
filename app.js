@@ -16,7 +16,7 @@ const hiveClient = new Client(hiveAPI)
 const KEY_TYPES = ["posting","active","memo"]
 
 const HAS_SERVER = "wss://hive-auth.arcange.eu"
-const HAS_PROTOCOL = 0.7            // supported HAS protocol version
+const HAS_PROTOCOL = 0.8            // supported HAS protocol version
 const PING_RATE = 60 * 1000 			  // 1 minute
 const PING_TIMEOUT = 5 * PING_RATE  // 5 minutes
 
