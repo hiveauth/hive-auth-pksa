@@ -27,7 +27,7 @@ let hasProtocol = undefined
 // NOTE: PKSA in service mode - Use local file as pksa storage
 const pksaStorage = "storage.json"
 // NOTE: PKSA in service mode - Use local file as keys storage
-const keysStorage = "../../hive-keys.json"
+const keysStorage = "keys.json"
 
 const keys = JSON.parse(fs.readFileSync(keysStorage))
 function getPrivateKey(name, type) {
