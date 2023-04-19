@@ -47,9 +47,13 @@ The `storage.json` file is where the PKSA will store its configuration, the acco
 * `sign_req_reject`: if set to true, the PKSA will automatically reply with an `sign_nack` to any incoming `sign_req`, preventing any other PKSA to approve them.
 * `challenge_req_reject`: if set to true, the PKSA will automatically reply with a `challenge_nack` to any incoming `challenge_req`, preventing any other PKSA to approve them.
 * `token_timeout_days`: (optional) the number of days before an app token expires. The default value if not present is 1 day.
+* `hive_api`: a string or an array of string with Hive API node(s) url,
+* `has_server`: the HAS server to connect to (ws://... or wss://...)
+* `hideEncryptedData`: (optional) is set to true, the encrypted data will be replaced with "<...>" to reduce log size. The default value if not present is false
+
 * `accounts`: an array of account objects for each account managed by the PKSA
     * `name`: Hive username
-    * `auths`: an array of auth objects for each access token created
+    * `auths`: an array of auth objects for each access token created (it will be automatically populated when the PKSA approves new authentication requests)
         * `token`: the access token (usually a uuid)
         * `expire`: UNIX time when the token expire
         * `key`: the symetric encryption key used to enrypt communication between the App and the PKSA, usually a uuid (encryption key should be unique per session)
@@ -66,6 +70,11 @@ The `storage.json` file is where the PKSA will store its configuration, the acco
     "sign_req_reject": false,
     "challenge_req_reject": false,
     "token_timeout_days": 1,
+
+	"hive_api": "https://api.hive.blog",
+	"has_server": "ws://hive-auth.arcange.eu",
+	"hideEncryptedData": true,
+
     "accounts": [
         {
             "name": "account1",
