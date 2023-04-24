@@ -460,7 +460,7 @@ function heartbeat() {
     wsClient = undefined
     startWebsocket()
   } else {
-    if(wsClient) {
+    if(wsClient && wsClient.readyState==1) {
       // Ping HAS server
       wsClient.ping()
     }
