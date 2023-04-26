@@ -10,26 +10,31 @@ const ecc = require("@hiveio/hive-js/lib/auth/ecc");
 
 const { Client, PrivateKey, Tansaction } = require('@hiveio/dhive');
 const { TIMEOUT } = require("dns");
-const hiveAPI = "https://api.hive.blog"
-const hiveClient = new Client(hiveAPI)
 
 const KEY_TYPES = ["posting","active","memo"]
 
-const HAS_SERVER = "wss://hive-auth.arcange.eu"
 const HAS_PROTOCOL = 0.8            // supported HAS protocol version
 const PING_RATE = 60 * 1000 			  // 1 minute
 const PING_TIMEOUT = 5 * PING_RATE  // 5 minutes
+
+// NOTE: PKSA in service mode - Use local file as pksa storage
+const pksaStorage = "storage.json"
+const config = JSON.parse(fs.readFileSync(pksaStorage))
+// NOTE: PKSA in service mode - Use local file as keys storage
+const keys = JSON.parse(fs.readFileSync(config.keys || "keys.json"))
+
+console.log("Protocol version: " + HAS_PROTOCOL)
+console.log("HiveAuth node:    " + config.has_server)
+console.log("Hive API node:    " + config.hive_api)
+
+// Initialize Hive API node
+const hiveClient = new Client(config.hive_api)
 
 let wsClient = undefined
 let wsHeartbeat = undefined
 let hasProtocol = undefined
 
-// NOTE: PKSA in service mode - Use local file as pksa storage
-const pksaStorage = "storage.json"
-// NOTE: PKSA in service mode - Use local file as keys storage
-const keysStorage = "keys.json"
 
-const keys = JSON.parse(fs.readFileSync(keysStorage))
 function getPrivateKey(name, type) {
   const account = keys.find(o => o.name==name)
   switch(type) {
@@ -44,16 +49,25 @@ function getPrivateKey(name, type) {
   }
 }
 
+function hideEncryptedData(str) {
+  if(config.hideEncryptedData) {
+    while(str.includes('"data":"')){
+      str = str.replace(/"data":"(.*?)"/,'"data":<...>')
+    }
+  }
+	return str
+}
+
 function datetoISO(date) {
   return date.toISOString().replace(/T|Z/g," ")
 }
 
 function log(message) {
-  console.log(`${datetoISO(new Date())} - ${message}`)
+  console.log(`${datetoISO(new Date())} - ${hideEncryptedData(message)}`)
 }
 
 function logerror(message) {
-  console.error(`${datetoISO(new Date())} - ${message}`)
+  console.error(`${datetoISO(new Date())} - ${hideEncryptedData(message)}`)
 }
 
 function sleep(ms) {
@@ -103,13 +117,13 @@ async function processMessage(message) {
         const key_server = payload.key
         if(key_server) {
           try {
-            const storage = JSON.parse(fs.readFileSync(pksaStorage))
+            const dataStorage = JSON.parse(fs.readFileSync(pksaStorage))
             const request = {
               cmd: "register_req",
-              app: storage.pksa_name,
+              app: dataStorage.pksa_name,
               accounts: []
             }
-            const accounts = storage.accounts
+            const accounts = dataStorage.accounts
             for(const account of accounts) {
               checkUsername(account.name,true)
               const key_type = "posting"
@@ -385,10 +399,10 @@ async function processMessage(message) {
 }
 
 // HAS client
-function startWebsocket() {
+async function startWebsocket() {
   log(`PKSA started - protocol: ${HAS_PROTOCOL} `)
   //const wsClient = new WebSocket("ws://localhost:3000/")
-  wsClient = new WebSocket(HAS_SERVER)
+  wsClient = new WebSocket(config.has_server)
 
   //when a websocket connection with the HAS is established
   wsClient.onopen = async function(e) {
@@ -445,7 +459,7 @@ function heartbeat() {
     wsClient = undefined
     startWebsocket()
   } else {
-    if(wsClient) {
+    if(wsClient && wsClient.readyState==1) {
       // Ping HAS server
       wsClient.ping()
     }
