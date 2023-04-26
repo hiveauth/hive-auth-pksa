@@ -17,12 +17,11 @@ const HAS_PROTOCOL = 0.8            // supported HAS protocol version
 const PING_RATE = 60 * 1000 			  // 1 minute
 const PING_TIMEOUT = 5 * PING_RATE  // 5 minutes
 
-// NOTE: PKSA in service mode - Use local file as keys storage
-const keysStorage = "../../hive-keys.json"
-const keys = JSON.parse(fs.readFileSync(keysStorage))
 // NOTE: PKSA in service mode - Use local file as pksa storage
 const pksaStorage = "storage.json"
 const config = JSON.parse(fs.readFileSync(pksaStorage))
+// NOTE: PKSA in service mode - Use local file as keys storage
+const keys = JSON.parse(fs.readFileSync(config.keys || "keys.json"))
 
 console.log("Protocol version: " + HAS_PROTOCOL)
 console.log("HiveAuth node:    " + config.has_server)

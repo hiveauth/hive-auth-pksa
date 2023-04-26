@@ -49,6 +49,7 @@ The `storage.json` file is where the PKSA will store its configuration, the acco
 * `token_timeout_days`: (optional) the number of days before an app token expires. The default value if not present is 1 day.
 * `hive_api`: a string or an array of string with Hive API node(s) url,
 * `has_server`: the HAS server to connect to (ws://... or wss://...)
+* `keys`: full path to file containing managed accounts private keys. Default to local "keys.json" if not present
 * `hideEncryptedData`: (optional) is set to true, the encrypted data will be replaced with "<...>" to reduce log size. The default value if not present is false
 
 * `accounts`: an array of account objects for each account managed by the PKSA
@@ -73,6 +74,7 @@ The `storage.json` file is where the PKSA will store its configuration, the acco
 
 	"hive_api": "https://api.hive.blog",
 	"has_server": "ws://hive-auth.arcange.eu",
+    "keys": "./keys.json"
 	"hideEncryptedData": true,
 
     "accounts": [
