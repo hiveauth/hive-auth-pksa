@@ -166,14 +166,14 @@ async function processMessage(message) {
         //          It the PKSA wants to display info from the app data, it must wait for "auth_req" before displaying information to the user and sending "auth_ack" or "auth_nack" back to the HAS
         //          Processing "auth_req" allows a "service" APP to retieve a token/expiration and optionally communication encryption key (auth_key)
         //          If the app send the auth_key online with the auth_req payload, it must be encrypted with an encryption secret pre-shared between the app and the PKSA.
-        //          This prevents the HAS host being able to decrypt communication between an App and the PKSA!
+        //          This prevents any HAS node from being able to decrypt communication between an App and the PKSA!
 
         assert(payload.account && typeof(payload.account)=="string", `invalid payload (account)`)
         assert(payload.data && typeof(payload.data)=="string", `invalid payload (data)`)
         // Reload data from storage
         const dataStorage = JSON.parse(fs.readFileSync(pksaStorage))
         let auth_key = undefined
-        // If the PKSA run in "service mode " or for debug purpose, the APP can pass the encryption key to the PKSA with the auth_req payload
+        // If the PKSA run in "service mode " or for debug purpose, the APP can pass the encryption key (auth_key) to the PKSA with the auth_req payload
         if(payload.auth_key && dataStorage.auth_req_secret) {
           // Decrypt the provided auth_key using the pre-shared PKSA secret
           auth_key = CryptoJS.AES.decrypt(payload.auth_key,dataStorage.auth_req_secret).toString(CryptoJS.enc.Utf8)   
