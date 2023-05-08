@@ -198,7 +198,7 @@ async function processMessage(message) {
               // Decrypt data received with off-band app encryption key
               const auth_req_data = JSON.parse(CryptoJS.AES.decrypt(payload.data,auth_key).toString(CryptoJS.enc.Utf8))
               // Check if we received a token and if it's still valid
-              const validToken = payload.token && account.auths.find(o => o.token==payload.token && o.expire > Date.now())
+              const validToken = payload.token && account.auths.some(o => o.token==payload.token && o.expire > Date.now())
               if(validToken) {
                 // Token is valid, reuse it and approve auth_req
                 approve = true
@@ -307,8 +307,8 @@ async function processMessage(message) {
                   const res = await hiveClient.broadcast.sendOperations(sign_data.ops, PrivateKey.from(key_private))
                   HASSend(JSON.stringify({cmd:"sign_ack", uuid:payload.uuid, data:res.id, broadcast:payload.broadcast}))
                 } else {
-                  throw new Error("Transaction signing not enabled")
-                  // To enable transaction signing, comment the above line uncomment the following code.
+                  throw new Error("Transaction signing only is not enabled")
+                  // To enable transaction signing, comment the above line and uncomment the following code.
                   //
                   // const tx = new Transaction
                   // tx.ops = ops
