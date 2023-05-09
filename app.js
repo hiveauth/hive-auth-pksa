@@ -9,7 +9,6 @@ const hivejs = require('@hiveio/hive-js')
 const ecc = require("@hiveio/hive-js/lib/auth/ecc");
 
 const { Client, PrivateKey, Tansaction } = require('@hiveio/dhive');
-const { TIMEOUT } = require("dns");
 
 const KEY_TYPES = ["posting","active","memo"]
 
@@ -33,7 +32,6 @@ const hiveClient = new Client(config.hive_api)
 let wsClient = undefined
 let wsHeartbeat = undefined
 let hasProtocol = undefined
-
 
 function getPrivateKey(name, type) {
   const account = keys.find(o => o.name==name)
@@ -85,6 +83,32 @@ function checkUsername(name) {
   assert(name[0], `${err} (empty)`)
   assert(name==name.trim(), `${err} (spaces)`)
   assert(name==name.toLowerCase(), `${err} (case)`)
+}
+
+function validatePayload(storage, payload) {
+  // Check if the account is managed by the PKSA
+  const account = storage.accounts.find(o => o.name==payload.account)
+  if(account) {
+    // Known account, try to decrypt with each encryption key associated to it
+    for(const auth of account.auths.filter(o => o.expire > Date.now())) {
+      try {
+        const data = JSON.parse(CryptoJS.AES.decrypt(payload.data, auth.key).toString(CryptoJS.enc.Utf8))
+        if(data != "") {
+          // Decryption succeeded, check payload against replay attack
+          assert(data.nonce  > (auth.nonce || 0),"invalid (nonce)")
+          // update auth in local storage with current nonce
+          auth.nonce = data.nonce
+          fs.writeFileSync(pksaStorage,JSON.stringify(storage, null, '\t'))
+          // Then return valid auth and decrypted payload data
+          return {auth, data}
+        }
+      } catch(e) {
+        if(e.code=="ERR_ASSERTION") throw e
+        console.debug(e.stack)
+      }
+    }
+  }
+  return undefined
 }
 
 async function processMessage(message) {
@@ -149,7 +173,6 @@ async function processMessage(message) {
         //   cmd: "auth_req" 
         //   account: string
         //   data: {
-        //       token: string = undefined
         //       app: {
         //           name: string
         //           description: string = undefined
@@ -164,7 +187,7 @@ async function processMessage(message) {
         //
         // NOTE:    PKSA may not process "auth_req" from the HAS except when it runs in "service" mode
         //          It the PKSA wants to display info from the app data, it must wait for "auth_req" before displaying information to the user and sending "auth_ack" or "auth_nack" back to the HAS
-        //          Processing "auth_req" allows a "service" APP to retieve a token/expiration and optionally communication encryption key (auth_key)
+        //          Processing "auth_req" allows a "service" APP to retieve an auth expiration and optionally communication encryption key (auth_key)
         //          If the app send the auth_key online with the auth_req payload, it must be encrypted with an encryption secret pre-shared between the app and the PKSA.
         //          This prevents any HAS node from being able to decrypt communication between an App and the PKSA!
 
@@ -176,7 +199,7 @@ async function processMessage(message) {
         // If the PKSA run in "service mode " or for debug purpose, the APP can pass the encryption key (auth_key) to the PKSA with the auth_req payload
         if(payload.auth_key && dataStorage.auth_req_secret) {
           // Decrypt the provided auth_key using the pre-shared PKSA secret
-          auth_key = CryptoJS.AES.decrypt(payload.auth_key,dataStorage.auth_req_secret).toString(CryptoJS.enc.Utf8)   
+          auth_key = CryptoJS.AES.decrypt(payload.auth_key, dataStorage.auth_req_secret).toString(CryptoJS.enc.Utf8)   
         }
         if(auth_key){
           try {
@@ -186,27 +209,25 @@ async function processMessage(message) {
             if(account) {
               // NOTE: A PKSA with a UI should ask for user approval here
               //       If the PKSA runs in "service" mode,
-              //       - set approve to true if you need to initialise your APP token
-              //       - set approve to false when your APP already has a valid token
-              //       Alternatively, you can initialise from your storage file.
+              //       - set approve to true if you want the PKSA to automatically approve new authentications with a new auth_key
+              //       - set approve to false when your APP has already authenticated and registered an auth_key
+              //       Alternatively, you can define the auth_req_approve value in your storage file.
               let approve = dataStorage.auth_req_approve || false
               // Prepare reply
               const auth_ack_data = {}
-              // NOTE: The default expiration time for a token is 24 hours - It can be set to a longer duration for "service" APPS
-              const timeout = (dataStorage.token_timeout_days || 1) * 24 * 60 * 60 * 1000
+              // NOTE: The default expiration time for an auth_key is 24 hours - It can be set to a longer duration for "service" APPS
+              const timeout = (dataStorage.auth_timeout_days || 1) * 24 * 60 * 60 * 1000
               // Create authentication challenge
-              // Decrypt data received with off-band app encryption key
-              const auth_req_data = JSON.parse(CryptoJS.AES.decrypt(payload.data,auth_key).toString(CryptoJS.enc.Utf8))
-              // Check if we received a token and if it's still valid
-              const validToken = payload.token && account.auths.some(o => o.token==payload.token && o.expire > Date.now())
-              if(validToken) {
-                // Token is valid, reuse it and approve auth_req
+              // Decrypt data received with encryption key received offline from the app
+              const auth_req_data = JSON.parse(CryptoJS.AES.decrypt(payload.data, auth_key).toString(CryptoJS.enc.Utf8))
+              // Check if the matching auth it's still valid
+              const validAuth = account.auths.find(o => o.key==auth_key && o.expire > Date.now())
+              if(validAuth) {
+                // auth is valid, reuse it and approve auth_req
                 approve = true
-                auth_ack_data.token = validToken.token
-                auth_ack_data.expire = validToken.expire
+                auth_ack_data.expire = validAuth.expire
               } else {
-                // create a new token
-                auth_ack_data.token =  uuidv4(),
+                // create a new auth
                 auth_ack_data.expire = Date.now() + timeout
               }
               // Check if the app also requires the PKSA to sign a challenge
@@ -229,17 +250,17 @@ async function processMessage(message) {
                 // Encrypt the returned data
                 const data = CryptoJS.AES.encrypt(JSON.stringify(auth_ack_data),auth_key).toString()
                 HASSend(JSON.stringify({cmd:"auth_ack", uuid:payload.uuid, data:data}))
-                if(!validToken) {
-                  // Add new token into storage
+                if(!validAuth) {
+                  // Add new auth into storage
                   account.auths.push({
-                      token:auth_ack_data.token,
-                      expire:auth_ack_data.expire,
-                      key:auth_key,
-                      app:auth_req_data.app.name,
-                      ts_create:datetoISO(new Date()),
-                      ts_expire:datetoISO(new Date(auth_ack_data.expire)) })
+                    expire:auth_ack_data.expire,
+                    key:auth_key,
+                    app:auth_req_data.app.name,
+                    ts_create:datetoISO(new Date()),
+                    ts_expire:datetoISO(new Date(auth_ack_data.expire)) 
+                  })
                 } else {
-                  validToken.ts_lastused = datetoISO(new Date())
+                  validAuth.ts_lastused = datetoISO(new Date())
                 }
               } else {
                 if(dataStorage.auth_req_reject) {
@@ -248,7 +269,7 @@ async function processMessage(message) {
                   HASSend(JSON.stringify({cmd:"auth_nack", uuid:payload.uuid, data:data}))
                 }
               }
-              // clean storage from expired tokens
+              // clean storage from expired auths
               account.auths = account.auths.filter(o => o.expire > Date.now()) 
               // Update local storage
               fs.writeFileSync(pksaStorage,JSON.stringify(dataStorage, null, '\t'))
@@ -265,68 +286,61 @@ async function processMessage(message) {
         // { 
         //   cmd: "auth_req" 
         //   account: string
-        //   token: string
         //   data: {
         //    key_type: string
         //    ops: string
         //    broadcast: boolean
+        //    nonce: number
         //   }
         // }
         assert(payload.account && typeof(payload.account)=="string","Invalid payload (account)")
-        assert(payload.token && typeof(payload.token)=="string","Invalid payload (token)")
         assert(payload.data && typeof(payload.data)=="string", "invalid payload (data)")
 
         const dataStorage = JSON.parse(fs.readFileSync(pksaStorage))
-        // Check if the account is managed by the PKSA
-        const account = dataStorage.accounts.find(o => o.name==payload.account)
-        // Process payload only if the PKSA manage the account else ignore message
-        if(account) {
-          // Check if the PKSA stores that token and it hasn't expired
-          const auth = account.auths.find(o => o.token==payload.token && o.expire > Date.now())
-          if(auth) {
-            try {
-              // Decrypt the sign_data to sign with the encryption key associated to the token.
-              const sign_data = JSON.parse(CryptoJS.AES.decrypt(payload.data, auth.key).toString(CryptoJS.enc.Utf8))
-              assert(sign_data.key_type && typeof(sign_data.key_type)=="string" && KEY_TYPES.includes(sign_data.key_type), "invalid data (key_type)")
-              assert(sign_data.ops && sign_data.ops.length >0, "invalid data (ops)")
-              assert(sign_data.broadcast!=undefined, "invalid data (broadcast)")
+        const { auth, data: sign_data } = validatePayload(dataStorage, payload)
+        if(auth) {
+          // Decryption was successful, we can process the request
+          try {
+            // validate decrypted sign_data
+            assert(sign_data.key_type && typeof(sign_data.key_type)=="string" && KEY_TYPES.includes(sign_data.key_type), "invalid data (key_type)")
+            assert(sign_data.ops && sign_data.ops.length >0, "invalid data (ops)")
+            assert(sign_data.broadcast!=undefined, "invalid data (broadcast)")
 
-              const key_private = getPrivateKey(payload.account, sign_data.key_type)
-              let approve = false
-              // WARNING: A PKSA running in service mode should NOT allow operations requiring the active key
-              //          Bypass the following test at your own risk.
-              if(sign_data.key_type!="active") {
-                // Check if the PKSA stores the requested private key
-                if(key_private) {
-                  // NOTE: A PKSA with a UI should ask for user approval here
-                  approve = true
-                }
+            const key_private = getPrivateKey(payload.account, sign_data.key_type)
+            let approve = false
+            // WARNING: A PKSA running in service mode should NOT allow operations requiring the active key
+            //          Bypass the following test at your own risk.
+            if(sign_data.key_type!="active") {
+              // Check if the PKSA stores the requested private key
+              if(key_private) {
+                // NOTE: A PKSA with a UI should ask for user approval here
+                approve = true
               }
-              if(approve) {
-                if(sign_data.broadcast) {
-                  const res = await hiveClient.broadcast.sendOperations(sign_data.ops, PrivateKey.from(key_private))
-                  HASSend(JSON.stringify({cmd:"sign_ack", uuid:payload.uuid, data:res.id, broadcast:payload.broadcast}))
-                } else {
-                  throw new Error("Transaction signing only is not enabled")
-                  // To enable transaction signing, comment the above line and uncomment the following code.
-                  //
-                  // const tx = new Transaction
-                  // tx.ops = ops
-                  // const signed_tx = await hiveClient.broadcast.sign(tx, PrivateKey.from(key_private))
-                  // HASSend(JSON.stringify({cmd:"sign_ack", uuid:uuid, broadcast:payload.broadcast, data:signed_tx}))
-                }
-              } else {
-                if(dataStorage.sign_req_reject) {
-                  // PKSA does not allow another PKSA to approve sign_req
-                  const data = CryptoJS.AES.encrypt(payload.uuid,auth_key).toString()
-                  HASSend(JSON.stringify({cmd:"sign_nack", uuid:payload.uuid, data:data}))
-                }
-              }
-            } catch(e) {
-              // Encrypt error message before sending it to the APP via the HAS
-              const ee = CryptoJS.AES.encrypt(e.message,auth.key).toString()
-              HASSend(JSON.stringify({cmd:"sign_err", uuid:payload.uuid, error:ee}))
             }
+            if(approve) {
+              if(sign_data.broadcast) {
+                const res = await hiveClient.broadcast.sendOperations(sign_data.ops, PrivateKey.from(key_private))
+                HASSend(JSON.stringify({cmd:"sign_ack", uuid:payload.uuid, data:res.id, broadcast:payload.broadcast}))
+              } else {
+                throw new Error("Transaction signing only is not enabled")
+                // To enable transaction signing, comment the above line and uncomment the following code.
+                //
+                // const tx = new Transaction
+                // tx.ops = ops
+                // const signed_tx = await hiveClient.broadcast.sign(tx, PrivateKey.from(key_private))
+                // HASSend(JSON.stringify({cmd:"sign_ack", uuid:uuid, broadcast:payload.broadcast, data:signed_tx}))
+              }
+            } else {
+              if(dataStorage.sign_req_reject) {
+                // PKSA does not allow another PKSA to approve sign_req
+                const data = CryptoJS.AES.encrypt(payload.uuid, auth.key).toString()
+                HASSend(JSON.stringify({cmd:"sign_nack", uuid:payload.uuid, data:data}))
+              }
+            }
+          } catch(e) {
+            // Encrypt error message before sending it to the APP via the HAS
+            const ee = CryptoJS.AES.encrypt(e.message,auth.key).toString()
+            HASSend(JSON.stringify({cmd:"sign_err", uuid:payload.uuid, error:ee}))
           }
         }
         break
@@ -337,55 +351,46 @@ async function processMessage(message) {
         // { 
         //   cmd: "challenge_req"
         //   account: string
-        //   token: string
         //   data: {
         //       key_type: string
         //       challenge: string
         //   }
         // }
         assert(payload.account && typeof(payload.account)=="string","Invalid payload (account)")
-        assert(payload.token && typeof(payload.token)=="string","Invalid payload (token)")
         assert(payload.data && typeof(payload.data)=="string", "invalid payload (data)")
 
         const dataStorage = JSON.parse(fs.readFileSync(pksaStorage))
-        // Check if the account is managed by the PKSA
-        const account = dataStorage.accounts.find(o => o.name==payload.account)
-        // Process payload only if the PKSA manage the account else ignore message
-        if(account) {
-          // Check if the PKSA stores that token and it hasn't expired
-          const auth = account.auths.find(o => o.token==payload.token && o.expire > Date.now())
-          if(auth) {
-            try {
-              // Decrypt the challenge_data to sign with the encryption key associated to the token.
-              const challenge_data = JSON.parse(CryptoJS.AES.decrypt(payload.data, auth.key).toString(CryptoJS.enc.Utf8))
-              assert(challenge_data.key_type && ["posting","active","memo"].includes(challenge_data.key_type), "invalid data (key_type)")
-              assert(challenge_data.challenge && typeof(challenge_data.challenge)=='string', "invalid data (challenge)")
+        const { auth, data: challenge_data } = validatePayload(dataStorage, payload)
+        if(auth) {
+          // Decryption was successful, we can process the request
+          try {
+            assert(challenge_data.key_type && ["posting","active","memo"].includes(challenge_data.key_type), "invalid data (key_type)")
+            assert(challenge_data.challenge && typeof(challenge_data.challenge)=='string', "invalid data (challenge)")
 
-              let approve = false
-              // Check if the PKSA stores the requested private key
-              const key_private = getPrivateKey(payload.account, challenge_data.key_type)
-              if(key_private) {
-                // NOTE: A PKSA with a UI should ask for user approval here
-                approve = true
-              }
-              if(approve) {
-                  const sigHex = ecc.Signature.signBuffer(challenge_data.challenge,key_private).toHex()
-                  const pubKey = ecc.PrivateKey.fromWif(key_private).toPublic().toString()
-                  const challenge_ack_data = { pubkey:pubKey, challenge:sigHex }
-                  // Encrypt the returned data
-                  const data = CryptoJS.AES.encrypt(JSON.stringify(challenge_ack_data),auth.key).toString()
-                  HASSend(JSON.stringify({cmd:"challenge_ack", uuid:payload.uuid, data:data}))
-              } else {
-                if(dataStorage.challenge_req_reject) {
-                  const data = CryptoJS.AES.encrypt(payload.uuid,auth_key).toString()
-                  HASSend(JSON.stringify({cmd:"challenge_nack", uuid:payload.uuid, data:data}))
-                }
-              }
-            } catch(e) {
-              // Encrypt error message before sending it to the APP via the HAS
-              const ee = CryptoJS.AES.encrypt(e.message,auth.key).toString()
-              HASSend(JSON.stringify({cmd:"challenge_err", uuid:payload.uuid, error:ee}))
+            let approve = false
+            // Check if the PKSA stores the requested private key
+            const key_private = getPrivateKey(payload.account, challenge_data.key_type)
+            if(key_private) {
+              // NOTE: A PKSA with a UI should ask for user approval here
+              approve = true
             }
+            if(approve) {
+                const sigHex = ecc.Signature.signBuffer(challenge_data.challenge,key_private).toHex()
+                const pubKey = ecc.PrivateKey.fromWif(key_private).toPublic().toString()
+                const challenge_ack_data = { pubkey:pubKey, challenge:sigHex }
+                // Encrypt the returned data
+                const data = CryptoJS.AES.encrypt(JSON.stringify(challenge_ack_data),auth.key).toString()
+                HASSend(JSON.stringify({cmd:"challenge_ack", uuid:payload.uuid, data:data}))
+            } else {
+              if(dataStorage.challenge_req_reject) {
+                const data = CryptoJS.AES.encrypt(payload.uuid,auth.key).toString()
+                HASSend(JSON.stringify({cmd:"challenge_nack", uuid:payload.uuid, data:data}))
+              }
+            }
+          } catch(e) {
+            // Encrypt error message before sending it to the APP via the HAS
+            const ee = CryptoJS.AES.encrypt(e.message,auth.key).toString()
+            HASSend(JSON.stringify({cmd:"challenge_err", uuid:payload.uuid, error:ee}))
           }
         }
         break
@@ -417,8 +422,8 @@ async function startWebsocket() {
       // Stop PKSA
       wsClient.close()
     } else {
-    // Request key for registration process
-    HASSend(JSON.stringify({cmd:"key_req"}))
+      // Request key for registration process
+      HASSend(JSON.stringify({cmd:"key_req"}))
     }
   }
 
