@@ -12,13 +12,13 @@ const { Client, PrivateKey, Tansaction } = require('@hiveio/dhive');
 
 const KEY_TYPES = ["posting","active","memo"]
 
-const HAS_PROTOCOL = 0.8            // supported HAS protocol version
+const HAS_PROTOCOL = 1.0            // supported HAS protocol version
 const PING_RATE = 60 * 1000 			  // 1 minute
 const PING_TIMEOUT = 5 * PING_RATE  // 5 minutes
 
 // NOTE: PKSA in service mode - Use local file as pksa storage
-const pksaStorage = "storage.json"
-const config = JSON.parse(fs.readFileSync(pksaStorage))
+const STORAGE_FILE = "storage.json"
+const config = JSON.parse(fs.readFileSync(STORAGE_FILE))
 // NOTE: PKSA in service mode - Use local file as keys storage
 const keys = JSON.parse(fs.readFileSync(config.keys || "keys.json"))
 
@@ -98,7 +98,7 @@ function validatePayload(storage, payload) {
           assert(data.nonce  > (auth.nonce || 0),"invalid (nonce)")
           // update auth in local storage with current nonce
           auth.nonce = data.nonce
-          fs.writeFileSync(pksaStorage,JSON.stringify(storage, null, '\t'))
+          fs.writeFileSync(STORAGE_FILE,JSON.stringify(storage, null, '\t'))
           // Then return valid auth and decrypted payload data
           return {auth, data}
         }
@@ -141,13 +141,13 @@ async function processMessage(message) {
         const key_server = payload.key
         if(key_server) {
           try {
-            const dataStorage = JSON.parse(fs.readFileSync(pksaStorage))
+            const storage = JSON.parse(fs.readFileSync(STORAGE_FILE))
             const request = {
               cmd: "register_req",
-              app: dataStorage.pksa_name,
+              app: storage.pksa_name,
               accounts: []
             }
-            const accounts = dataStorage.accounts
+            const accounts = storage.accounts
             for(const account of accounts) {
               checkUsername(account.name,true)
               const key_type = "posting"
@@ -194,17 +194,17 @@ async function processMessage(message) {
         assert(payload.account && typeof(payload.account)=="string", `invalid payload (account)`)
         assert(payload.data && typeof(payload.data)=="string", `invalid payload (data)`)
         // Reload data from storage
-        const dataStorage = JSON.parse(fs.readFileSync(pksaStorage))
+        const storage = JSON.parse(fs.readFileSync(STORAGE_FILE))
         let auth_key = undefined
         // If the PKSA run in "service mode " or for debug purpose, the APP can pass the encryption key (auth_key) to the PKSA with the auth_req payload
-        if(payload.auth_key && dataStorage.auth_req_secret) {
+        if(payload.auth_key && storage.auth_req_secret) {
           // Decrypt the provided auth_key using the pre-shared PKSA secret
-          auth_key = CryptoJS.AES.decrypt(payload.auth_key, dataStorage.auth_req_secret).toString(CryptoJS.enc.Utf8)   
+          auth_key = CryptoJS.AES.decrypt(payload.auth_key, storage.auth_req_secret).toString(CryptoJS.enc.Utf8)   
         }
         if(auth_key){
           try {
             // Check if the account is managed by the PKSA
-            const account = dataStorage.accounts.find(o => o.name==payload.account)
+            const account = storage.accounts.find(o => o.name==payload.account)
             // Process payload only if the PKSA manage the account else ignore message
             if(account) {
               // NOTE: A PKSA with a UI should ask for user approval here
@@ -212,11 +212,11 @@ async function processMessage(message) {
               //       - set approve to true if you want the PKSA to automatically approve new authentications with a new auth_key
               //       - set approve to false when your APP has already authenticated and registered an auth_key
               //       Alternatively, you can define the auth_req_approve value in your storage file.
-              let approve = dataStorage.auth_req_approve || false
+              let approve = storage.auth_req_approve || false
               // Prepare reply
               const auth_ack_data = {}
               // NOTE: The default expiration time for an auth_key is 24 hours - It can be set to a longer duration for "service" APPS
-              const timeout = (dataStorage.auth_timeout_days || 1) * 24 * 60 * 60 * 1000
+              const timeout = (storage.auth_timeout_days || 1) * 24 * 60 * 60 * 1000
               // Create authentication challenge
               // Decrypt data received with encryption key received offline from the app
               const auth_req_data = JSON.parse(CryptoJS.AES.decrypt(payload.data, auth_key).toString(CryptoJS.enc.Utf8))
@@ -263,7 +263,7 @@ async function processMessage(message) {
                   validAuth.ts_lastused = datetoISO(new Date())
                 }
               } else {
-                if(dataStorage.auth_req_reject) {
+                if(storage.auth_req_reject) {
                   // PKSA does not allow another PKSA to approve auth_req
                   const data = CryptoJS.AES.encrypt(payload.uuid,auth_key).toString()
                   HASSend(JSON.stringify({cmd:"auth_nack", uuid:payload.uuid, data:data}))
@@ -272,7 +272,7 @@ async function processMessage(message) {
               // clean storage from expired auths
               account.auths = account.auths.filter(o => o.expire > Date.now()) 
               // Update local storage
-              fs.writeFileSync(pksaStorage,JSON.stringify(dataStorage, null, '\t'))
+              fs.writeFileSync(STORAGE_FILE,JSON.stringify(storage, null, '\t'))
             }
           } catch(e) {
             logerror(e.message)
@@ -296,8 +296,8 @@ async function processMessage(message) {
         assert(payload.account && typeof(payload.account)=="string","Invalid payload (account)")
         assert(payload.data && typeof(payload.data)=="string", "invalid payload (data)")
 
-        const dataStorage = JSON.parse(fs.readFileSync(pksaStorage))
-        const { auth, data: sign_data } = validatePayload(dataStorage, payload)
+        const storage = JSON.parse(fs.readFileSync(STORAGE_FILE))
+        const { auth, data: sign_data } = validatePayload(storage, payload)
         if(auth) {
           // Decryption was successful, we can process the request
           try {
@@ -331,7 +331,7 @@ async function processMessage(message) {
                 // HASSend(JSON.stringify({cmd:"sign_ack", uuid:uuid, broadcast:payload.broadcast, data:signed_tx}))
               }
             } else {
-              if(dataStorage.sign_req_reject) {
+              if(storage.sign_req_reject) {
                 // PKSA does not allow another PKSA to approve sign_req
                 const data = CryptoJS.AES.encrypt(payload.uuid, auth.key).toString()
                 HASSend(JSON.stringify({cmd:"sign_nack", uuid:payload.uuid, data:data}))
@@ -359,8 +359,8 @@ async function processMessage(message) {
         assert(payload.account && typeof(payload.account)=="string","Invalid payload (account)")
         assert(payload.data && typeof(payload.data)=="string", "invalid payload (data)")
 
-        const dataStorage = JSON.parse(fs.readFileSync(pksaStorage))
-        const { auth, data: challenge_data } = validatePayload(dataStorage, payload)
+        const storage = JSON.parse(fs.readFileSync(STORAGE_FILE))
+        const { auth, data: challenge_data } = validatePayload(storage, payload)
         if(auth) {
           // Decryption was successful, we can process the request
           try {
@@ -382,7 +382,7 @@ async function processMessage(message) {
                 const data = CryptoJS.AES.encrypt(JSON.stringify(challenge_ack_data),auth.key).toString()
                 HASSend(JSON.stringify({cmd:"challenge_ack", uuid:payload.uuid, data:data}))
             } else {
-              if(dataStorage.challenge_req_reject) {
+              if(storage.challenge_req_reject) {
                 const data = CryptoJS.AES.encrypt(payload.uuid,auth.key).toString()
                 HASSend(JSON.stringify({cmd:"challenge_nack", uuid:payload.uuid, data:data}))
               }
