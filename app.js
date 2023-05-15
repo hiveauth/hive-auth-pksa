@@ -103,7 +103,10 @@ function validatePayload(storage, payload) {
           return {auth, data}
         }
       } catch(e) {
-        if(e.code=="ERR_ASSERTION") throw e
+        if(e.code=="ERR_ASSERTION") {
+          // Invalid nonce expected error, rethrow it
+          throw e
+        }
         console.debug(e.stack)
       }
     }
@@ -429,7 +432,11 @@ async function startWebsocket() {
 
   wsClient.onmessage = async function(event) {
     log(`[RECV] ${event.data}`)
-    processMessage(event.data)
+    try {
+      processMessage(event.data)
+    } catch(e) {
+      logerror(e.stack)
+    }
   }
 
   wsClient.onclose = async function(event) {
