@@ -5,15 +5,14 @@ const fs = require('fs')
 const { v4: uuidv4 } = require('uuid')
 const CryptoJS = require('crypto-js')
 const WebSocket = require("ws")
-const hivejs = require('@hiveio/hive-js')
 const ecc = require("@hiveio/hive-js/lib/auth/ecc")
 const memo = require("@hiveio/hive-js/lib/auth/memo")
 
 const { Client, PrivateKey, Tansaction } = require('@hiveio/dhive');
 
-const KEY_TYPES = ["posting","active","memo"]
+const KEY_TYPES = ["memo","posting","active"] // Types sorted by permission level - do not change it
 
-const HAS_PROTOCOL = 1.0            // supported HAS protocol version
+const HAS_PROTOCOL = 1              // supported HAS protocol version
 const PING_RATE = 60 * 1000 			  // 1 minute
 const PING_TIMEOUT = 5 * PING_RATE  // 5 minutes
 
@@ -33,29 +32,8 @@ const hiveClient = new Client(config.hive_api)
 let wsClient = undefined
 let wsHeartbeat = undefined
 let hasProtocol = undefined
+let key_server = undefined    // HAS server public key
 
-function getPrivateKey(name, type) {
-  const account = keys.find(o => o.name==name)
-  switch(type) {
-    case "posting":
-      return account.posting
-    case "active":
-      return account.active
-    case "memo":
-      return account.memo
-    default:
-      throw new Error(`invalid key type ${type}`)
-  }
-}
-
-function hideEncryptedData(str) {
-  if(config.hideEncryptedData) {
-    while(str.includes('"data":"')){
-      str = str.replace(/"data":"(.*?)"/,'"data":<...>')
-    }
-  }
-	return str
-}
 
 function datetoISO(date) {
   return date.toISOString().replace(/T|Z/g," ")
@@ -71,6 +49,53 @@ function logerror(message) {
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function getPrivateKey(name, type) {
+  const account = keys.find(o => o.name==name)
+  switch(type) {
+    case "posting":
+      return account.posting
+    case "active":
+      return account.active
+    case "memo":
+      return account.memo
+    default:
+      throw new Error(`invalid key type ${type}`)
+  }
+}
+
+function getLowestPrivateKey(name) {
+  for(const key_type of KEY_TYPES) {
+    const key_private = getPrivateKey(name, key_type)
+    if(key_private) return { key_type, key_private }
+  }
+  return undefined
+}
+
+/**
+ * Retrieve the private key with the lowest permission (memo -> posting -> active) from an account and encrypt a Proof Of Key text
+ * 
+ * @param {string} name Hive account name
+ * @param {string} text a value to be encoded and sent to the HAS
+ * @returns {string} encoded text
+ */
+function getPOK(name, text = Date.now()) {
+  const {key_private} = getLowestPrivateKey(name)
+  assert(key_private, `No private available for ${name}`)
+  return memo.encode(key_private, key_server, '#'+text)
+}
+
+function hideEncryptedData(str) {
+  if(config.hideEncryptedData) {
+    while(str.includes('"data":"')){
+      str = str.replace(/"data":"(.*?)"/,'"data":<...>')
+    }
+    while(str.includes('"pok":"')){
+      str = str.replace(/"pok":"(.*?)"/,'"pok":<...>')
+    }
+  }
+	return str
 }
 
 function HASSend(message) {
@@ -126,14 +151,12 @@ function validatePayload(storage, payload) {
 async function processMessage(message) {
   try {
     const payload = typeof(message)=="string" ? JSON.parse(message) : message
-    if(!payload.cmd || !typeof(payload.cmd)=="string") {
-      throw new Error(`invalid payload (cmd)`)
-    }
+    assert(payload.cmd && typeof(payload.cmd)=="string","invalid payload (cmd)")
     if(payload.uuid) {
       // validate APP request forwarded by HAS
-      assert(payload.uuid && typeof(payload.uuid)=="string", `invalid payload (uuid)`)
-      assert(payload.expire && typeof(payload.expire)=="number", `invalid payload (expire)`)
-      assert(payload.account && typeof(payload.account)=="string", `invalid payload (account)`)
+      assert(payload.uuid && typeof(payload.uuid)=="string", "invalid payload (uuid)")
+      assert(payload.expire && typeof(payload.expire)=="number", "invalid payload (expire)")
+      assert(payload.account && typeof(payload.account)=="string", "invalid payload (account)")
       assert(Date.now() < payload.expire, `request expired - now:${Date.now()} > expire:${payload.expire}}`)
     }
     switch(payload.cmd) {
@@ -150,7 +173,7 @@ async function processMessage(message) {
         return 
       case "key_ack":
         // server public key received
-        const key_server = payload.key
+        key_server = payload.key
         if(key_server) {
           try {
             const storage = JSON.parse(fs.readFileSync(STORAGE_FILE))
@@ -162,12 +185,8 @@ async function processMessage(message) {
             const accounts = storage.accounts
             for(const account of accounts) {
               checkUsername(account.name,true)
-              const key_type = "posting"
-              // retrieve account private key from PKSA storage
-              const key_private = getPrivateKey(account.name, key_type)
-              if(!key_private) throw new Error(`Private ${key_type} key missing for ${account.name}`)
-              const challenge = hivejs.memo.encode(key_private,key_server,'#'+Date.now())
-              request.accounts.push({name:account.name, key_type:key_type, challenge:challenge})
+              // Add account and Proof of Key
+              request.accounts.push({name:account.name, pok:getPOK(account.name)})
             }
             // Register accounts on HAS server
             HASSend(JSON.stringify(request))
@@ -254,14 +273,14 @@ async function processMessage(message) {
                   const pubKey = ecc.PrivateKey.fromWif(key_private).toPublic().toString()
                   auth_ack_data.challenge = { pubkey:pubKey, challenge:sigHex }
                 } else {
-                  // Else case should be managed with caution to avoid malicious actor sniffing keys availability
+                  // Else case must be managed with caution to avoid malicious actor sniffing keys availability
                   approve = false
                 }
               }
               if(approve) {
                 // Encrypt the returned data
                 const data = CryptoJS.AES.encrypt(JSON.stringify(auth_ack_data),auth_key).toString()
-                HASSend(JSON.stringify({cmd:"auth_ack", uuid:payload.uuid, data:data}))
+                HASSend(JSON.stringify({cmd:"auth_ack", uuid:payload.uuid, data:data, pok:getPOK(payload.account, payload.uuid) }))
                 if(!validAuth) {
                   // Add new auth into storage
                   account.auths.push({
@@ -278,7 +297,7 @@ async function processMessage(message) {
                 if(storage.auth_req_reject) {
                   // PKSA does not allow another PKSA to approve auth_req
                   const data = CryptoJS.AES.encrypt(payload.uuid,auth_key).toString()
-                  HASSend(JSON.stringify({cmd:"auth_nack", uuid:payload.uuid, data:data}))
+                  HASSend(JSON.stringify({cmd:"auth_nack", uuid:payload.uuid, data:data, pok:getPOK(payload.account, payload.uuid)}))
                 }
               }
               // clean storage from expired auths
@@ -288,7 +307,7 @@ async function processMessage(message) {
             }
           } catch(e) {
             logerror(e.message)
-            HASSend(JSON.stringify({cmd:"auth_err", uuid:payload.uuid, error:"Failed to process authentication request"}))
+            HASSend(JSON.stringify({cmd:"auth_err", uuid:payload.uuid, error:"Failed to process authentication request", pok:getPOK(payload.account, payload.uuid)}))
           }
         }
         break
@@ -332,7 +351,7 @@ async function processMessage(message) {
             if(approve) {
               if(sign_req_data.broadcast) {
                 const res = await hiveClient.broadcast.sendOperations(sign_req_data.ops, PrivateKey.from(key_private))
-                HASSend(JSON.stringify({cmd:"sign_ack", uuid:payload.uuid, data:res.id, broadcast:payload.broadcast}))
+                HASSend(JSON.stringify({cmd:"sign_ack", uuid:payload.uuid, data:res.id, broadcast:payload.broadcast, pok:getPOK(payload.account, payload.uuid)}))
               } else {
                 throw new Error("Transaction signing only is not enabled")
                 // To enable transaction signing, comment the above line and uncomment the following code.
@@ -340,19 +359,19 @@ async function processMessage(message) {
                 // const tx = new Transaction
                 // tx.ops = ops
                 // const signed_tx = await hiveClient.broadcast.sign(tx, PrivateKey.from(key_private))
-                // HASSend(JSON.stringify({cmd:"sign_ack", uuid:uuid, broadcast:payload.broadcast, data:signed_tx}))
+                // HASSend(JSON.stringify({cmd:"sign_ack", uuid:uuid, broadcast:payload.broadcast, data:signed_tx, pok:getPOK(payload.account, payload.uuid)}))
               }
             } else {
               if(storage.sign_req_reject) {
                 // PKSA does not allow another PKSA to approve sign_req
                 const data = CryptoJS.AES.encrypt(payload.uuid, auth.key).toString()
-                HASSend(JSON.stringify({cmd:"sign_nack", uuid:payload.uuid, data:data}))
+                HASSend(JSON.stringify({cmd:"sign_nack", uuid:payload.uuid, data:data, pok:getPOK(payload.account, payload.uuid)}))
               }
             }
           } catch(e) {
             // Encrypt error message before sending it to the APP via the HAS
             const ee = CryptoJS.AES.encrypt(e.message,auth.key).toString()
-            HASSend(JSON.stringify({cmd:"sign_err", uuid:payload.uuid, error:ee}))
+            HASSend(JSON.stringify({cmd:"sign_err", uuid:payload.uuid, error:ee, pok:getPOK(payload.account, payload.uuid)}))
           }
         }
         break
@@ -401,17 +420,17 @@ async function processMessage(message) {
               const challenge_ack_data = { pubkey:pubKey, challenge:challenge_res }
               // Encrypt the returned data
               const data = CryptoJS.AES.encrypt(JSON.stringify(challenge_ack_data),auth.key).toString()
-              HASSend(JSON.stringify({cmd:"challenge_ack", uuid:payload.uuid, data:data}))
+              HASSend(JSON.stringify({cmd:"challenge_ack", uuid:payload.uuid, data:data, pok:getPOK(payload.account, payload.uuid)}))
             } else {
               if(storage.challenge_req_reject) {
                 const data = CryptoJS.AES.encrypt(payload.uuid,auth.key).toString()
-                HASSend(JSON.stringify({cmd:"challenge_nack", uuid:payload.uuid, data:data}))
+                HASSend(JSON.stringify({cmd:"challenge_nack", uuid:payload.uuid, data:data, pok:getPOK(payload.account, payload.uuid)}))
               }
             }
           } catch(e) {
             // Encrypt error message before sending it to the APP via the HAS
             const ee = CryptoJS.AES.encrypt(e.message,auth.key).toString()
-            HASSend(JSON.stringify({cmd:"challenge_err", uuid:payload.uuid, error:ee}))
+            HASSend(JSON.stringify({cmd:"challenge_err", uuid:payload.uuid, error:ee, pok:getPOK(payload.account, payload.uuid)}))
           }
         }
         break
