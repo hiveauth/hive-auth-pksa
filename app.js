@@ -74,16 +74,16 @@ function getLowestPrivateKey(name) {
 }
 
 /**
- * Retrieve the private key with the lowest permission (memo -> posting -> active) from an account and encrypt a Proof Of Key text
+ * Retrieve the private key with the lowest permission (memo -> posting -> active) from an account and encrypt a Proof Of Key value
  * 
  * @param {string} name Hive account name
- * @param {string} text a value to be encoded and sent to the HAS
- * @returns {string} encoded text
+ * @param {string | number} value a value to be encoded and sent to the HAS
+ * @returns {string} encoded value
  */
-function getPOK(name, text = Date.now()) {
+function getPOK(name, value = Date.now()) {
   const {key_private} = getLowestPrivateKey(name)
   assert(key_private, `No private available for ${name}`)
-  return memo.encode(key_private, key_server, '#'+text)
+  return memo.encode(key_private, key_server, '#'+value)
 }
 
 function hideEncryptedData(str) {
