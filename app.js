@@ -76,8 +76,8 @@ function getLowestPrivateKey(name) {
 /**
  * Retrieve the private key with the lowest permission (memo -> posting -> active) from an account and encrypt a Proof Of Key value
  * 
- * @param {string} name Hive account name
- * @param {string | number} value a value to be encoded and sent to the HAS
+ * @param {string} name - Hive account name
+ * @param {string | number} value - a value to be encoded and sent to the HAS
  * @returns {string} encoded value
  */
 function getPOK(name, value = Date.now()) {
@@ -143,6 +143,27 @@ function validatePayload(storage, payload) {
         }
         console.debug(e.stack)
       }
+    }
+  }
+  return undefined
+}
+
+/**
+ * Try to decrypt an encrypted value with the auth_key stored and return the auth_key on success
+ * Return undefined on failure to decrypt
+ * 
+ * @param {Array} auths - authentication objects from storage
+ * @param {string} encrypted - encrypted data
+ * @returns {string} matching auth_key | undefined
+ */
+function ProbeAuthKey(auths, encrypted) {
+  for(const auth of auths) {
+    try {
+      CryptoJS.AES.decrypt(encrypted, auth.key)
+      // decryption succedded - use that auth_key
+      return auth.key
+    } catch(e) {
+      // decryption failed - nothing to do
     }
   }
   return undefined
@@ -226,18 +247,22 @@ async function processMessage(message) {
         assert(payload.data && typeof(payload.data)=="string", `invalid payload (data)`)
         // Reload data from storage
         const storage = JSON.parse(fs.readFileSync(STORAGE_FILE))
-        let auth_key = undefined
-        // If the PKSA run in "service mode " or for debug purpose, the APP can pass the encryption key (auth_key) to the PKSA with the auth_req payload
-        if(payload.auth_key && storage.auth_req_secret) {
-          // Decrypt the provided auth_key using the pre-shared PKSA secret
-          auth_key = CryptoJS.AES.decrypt(payload.auth_key, storage.auth_req_secret).toString(CryptoJS.enc.Utf8)   
-        }
-        if(auth_key){
-          try {
-            // Check if the account is managed by the PKSA
-            const account = storage.accounts.find(o => o.name==payload.account)
-            // Process payload only if the PKSA manage the account else ignore message
-            if(account) {
+        // Check if the account is managed by the PKSA
+        const account = storage.accounts.find(o => o.name==payload.account)
+        // Process payload only if the PKSA manage the account else ignore message
+        if(account) {
+          let auth_key = undefined
+          // If the PKSA run in "service mode " or for debug purpose, the APP can pass the encryption key (auth_key) to the PKSA with the auth_req payload
+          if(payload.auth_key && storage.auth_req_secret) {
+            // Decrypt the provided auth_key using the pre-shared PKSA secret
+            auth_key = CryptoJS.AES.decrypt(payload.auth_key, storage.auth_req_secret).toString(CryptoJS.enc.Utf8)   
+          }
+          // if the auth_key was not provided by the app, check if we have any stored auth_key that can decrypt the authentication request data
+          if(!auth_key) {
+            auth_key = ProbeAuthKey(account, payload.data)
+          }
+          if(auth_key){
+            try {
               // NOTE: A PKSA with a UI should ask for user approval here
               //       If the PKSA runs in "service" mode,
               //       - set approve to true if you want the PKSA to automatically approve new authentications with a new auth_key
@@ -304,10 +329,10 @@ async function processMessage(message) {
               account.auths = account.auths.filter(o => o.expire > Date.now()) 
               // Update local storage
               fs.writeFileSync(STORAGE_FILE,JSON.stringify(storage, null, '\t'))
+            } catch(e) {
+              logerror(e.message)
+              HASSend(JSON.stringify({cmd:"auth_err", uuid:payload.uuid, error:"Failed to process authentication request", pok:getPOK(payload.account, payload.uuid)}))
             }
-          } catch(e) {
-            logerror(e.message)
-            HASSend(JSON.stringify({cmd:"auth_err", uuid:payload.uuid, error:"Failed to process authentication request", pok:getPOK(payload.account, payload.uuid)}))
           }
         }
         break
