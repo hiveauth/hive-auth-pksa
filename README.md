@@ -22,13 +22,14 @@ The `storage.json` file is where the PKSA will store its configuration, the acco
     "auth_req_secret": string (optional)
     "auth_req_approve": boolean
     "auth_req_reject": boolean
-    "token_timeout_days": number
+    "sign_req_reject": boolean
+    "challenge_req_reject": boolean
+    "auth_timeout_days": number (optional)
     "accounts": [
         {
             "name": "string"
             "auths": [
                 {
-                    "token": string
                     "expire": number
                     "key": string
                     "app": string
@@ -46,7 +47,7 @@ The `storage.json` file is where the PKSA will store its configuration, the acco
 * `auth_req_reject`: if set to true, the PKSA will automatically reply with an `auth_nack` to any incoming `auth_req`, preventing any other PKSA to approve them.
 * `sign_req_reject`: if set to true, the PKSA will automatically reply with an `sign_nack` to any incoming `sign_req`, preventing any other PKSA to approve them.
 * `challenge_req_reject`: if set to true, the PKSA will automatically reply with a `challenge_nack` to any incoming `challenge_req`, preventing any other PKSA to approve them.
-* `token_timeout_days`: (optional) the number of days before an app token expires. The default value if not present is 1 day.
+* `auth_timeout_days`: (optional) the number of days before an authentication key expires. The default value if not present is 1 day.
 * `hive_api`: a string or an array of string with Hive API node(s) url,
 * `has_server`: the HAS server to connect to (ws://... or wss://...)
 * `keys`: full path to file containing managed accounts private keys. Default to local "keys.json" if not present
@@ -55,7 +56,6 @@ The `storage.json` file is where the PKSA will store its configuration, the acco
 * `accounts`: an array of account objects for each account managed by the PKSA
     * `name`: Hive username
     * `auths`: an array of auth objects for each access token created (it will be automatically populated when the PKSA approves new authentication requests)
-        * `token`: the access token (usually a uuid)
         * `expire`: UNIX time when the token expire
         * `key`: the symetric encryption key used to enrypt communication between the App and the PKSA, usually a uuid (encryption key should be unique per session)
         * `app`: any string that identify the app (example: "peakd.com")
@@ -70,7 +70,7 @@ The `storage.json` file is where the PKSA will store its configuration, the acco
     "auth_req_reject": false,
     "sign_req_reject": false,
     "challenge_req_reject": false,
-    "token_timeout_days": 1,
+    "auth_timeout_days": 1,
 
 	"hive_api": "https://api.hive.blog",
 	"has_server": "ws://hive-auth.arcange.eu",
@@ -82,13 +82,11 @@ The `storage.json` file is where the PKSA will store its configuration, the acco
             "name": "account1",
             "auths": [
                 {
-                    "token": "82b31850-00e0-40b4-a8a5-64a2ad8a43ff",
                     "expire": 1634590013188,
                     "key": "45e9e195-b5d1-47f4-bc74-ce1da747424e",
                     "app": "peakd.com"
                 },
                 {
-                    "token": "0c0eeeca-88a5-48b0-ab93-d90320baa1a2",
                     "expire": 1634591331195,
                     "key": "ed880eee-f354-41a2-84bb-ef08f18c891a",
                     "app": "peakd-mobile"
@@ -99,13 +97,11 @@ The `storage.json` file is where the PKSA will store its configuration, the acco
             "name": "account2",
             "auths": [
                 {
-                    "token": "82b31850-00e0-40b4-a8a5-64a2ad8a9876",
                     "expire": 1634590013188,
                     "key": "45e9e195-b5d1-47f4-bc74-ce1da7471a2e",
                     "app": "peakd.com"
                 },
                 {
-                    "token": "0c0eeeca-88a5-48b0-ab93-d90320ba9b6f",
                     "expire": 1634591331195,
                     "key": "ed880eee-f354-41a2-84bb-ef08f18c8899",
                     "app": "splinterlands"
