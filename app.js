@@ -148,27 +148,6 @@ function validatePayload(storage, payload) {
   return undefined
 }
 
-/**
- * Try to decrypt an encrypted value with the auth_key stored and return the auth_key on success
- * Return undefined on failure to decrypt
- * 
- * @param {Array} auths - authentication objects from storage
- * @param {string} encrypted - encrypted data
- * @returns {string} matching auth_key | undefined
- */
-function ProbeAuthKey(auths, encrypted) {
-  for(const auth of auths) {
-    try {
-      CryptoJS.AES.decrypt(encrypted, auth.key)
-      // decryption succedded - use that auth_key
-      return auth.key
-    } catch(e) {
-      // decryption failed - nothing to do
-    }
-  }
-  return undefined
-}
-
 async function processMessage(message) {
   try {
     const payload = typeof(message)=="string" ? JSON.parse(message) : message
@@ -257,9 +236,20 @@ async function processMessage(message) {
             // Decrypt the provided auth_key using the pre-shared PKSA secret
             auth_key = CryptoJS.AES.decrypt(payload.auth_key, storage.auth_req_secret).toString(CryptoJS.enc.Utf8)   
           }
-          // if the auth_key was not provided by the app, check if we have any stored auth_key that can decrypt the authentication request data
+          // if the auth_key was not provided by the app, check if we store any non-expired auth_key that can decrypt the auth_req_data
           if(!auth_key) {
-            auth_key = ProbeAuthKey(account, payload.data)
+            for(const auth of account.auths.filter(o => o.expire > Date.now())) {
+              try {
+                const res = CryptoJS.AES.decrypt(payload.data, auth.key).toString(CryptoJS.enc.Utf8)
+                if(res!="") {
+                  // decryption succedded - use this auth_key
+                  auth_key = auth.key
+                  break;
+                }
+              } catch(e) {
+                // decryption failed - nothing to do
+              }
+            }
           }
           if(auth_key){
             try {
@@ -273,7 +263,6 @@ async function processMessage(message) {
               const auth_ack_data = {}
               // NOTE: The default expiration time for an auth_key is 24 hours - It can be set to a longer duration for "service" APPS
               const timeout = (storage.auth_timeout_days || 1) * 24 * 60 * 60 * 1000
-              // Create authentication challenge
               // Decrypt data received with encryption key received offline from the app
               const auth_req_data = JSON.parse(CryptoJS.AES.decrypt(payload.data, auth_key).toString(CryptoJS.enc.Utf8))
               // Check if the matching auth it's still valid
