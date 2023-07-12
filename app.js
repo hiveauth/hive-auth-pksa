@@ -78,6 +78,7 @@ function getLowestPrivateKey(name) {
  * 
  * @param {string} name - Hive account name
  * @param {string | number} value - a value to be encoded and sent to the HAS
+ * @throws {AssertionError | Error}
  * @returns {string} encoded value
  */
 function getPOK(name, value = Date.now()) {

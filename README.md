@@ -33,7 +33,8 @@ The `storage.json` file is where the PKSA will store its configuration, the acco
                     "expire": number
                     "key": string
                     "app": string
-                }
+                },
+                { ... }
             ]
         },
         { ... }
@@ -41,17 +42,17 @@ The `storage.json` file is where the PKSA will store its configuration, the acco
 }
 ```
 
-* `pksa_name`: the PKSA nameencryption secret used to encrypt/decrypt the `auth_key` when an app send it with its `auth_req`. Should be defined only if the PKSA runs in "service mode"
+* `pksa_name`: the PKSA name
 * `auth_req_secret`: the PKSA encryption secret used to encrypt/decrypt the `auth_key` when an app send it with its `auth_req`. Should be defined only if the PKSA runs in "service mode"
-* `auth_req_approve`: if set to true, the PKSA will automatically approve authentication requests and create new tokens for the managed accounts. It should be left to false for secury reasons.
+* `auth_req_approve`: if set to true, the PKSA will automatically approve authentication requests. It should be left to false for secury reasons unless you want to create a new approval.
 * `auth_req_reject`: if set to true, the PKSA will automatically reply with an `auth_nack` to any incoming `auth_req`, preventing any other PKSA to approve them.
 * `sign_req_reject`: if set to true, the PKSA will automatically reply with an `sign_nack` to any incoming `sign_req`, preventing any other PKSA to approve them.
 * `challenge_req_reject`: if set to true, the PKSA will automatically reply with a `challenge_nack` to any incoming `challenge_req`, preventing any other PKSA to approve them.
-* `auth_timeout_days`: (optional) the number of days before an authentication key expires. The default value if not present is 1 day.
-* `hive_api`: a string or an array of string with Hive API node(s) url,
+* `auth_timeout_days`: (optional) the number of days before an authentication approval expires. The default value if not present is 1 day.
+* `hive_api`: a string or an array of strings with Hive API node(s) url,
 * `has_server`: the HAS server to connect to (ws://... or wss://...)
-* `keys`: full path to file containing managed accounts private keys. Default to local "keys.json" if not present
-* `hideEncryptedData`: (optional) is set to true, the encrypted data will be replaced with "<...>" to reduce log size. The default value if not present is false
+* `keys`: full path to file containing managed accounts private keys. Default to local file "keys.json" if not present
+* `hideEncryptedData`: (optional) if set to true, the encrypted data will be replaced with "<...>" to reduce log size. The default value if not present is false
 
 * `accounts`: an array of account objects for each account managed by the PKSA
     * `name`: Hive username
@@ -73,7 +74,7 @@ The `storage.json` file is where the PKSA will store its configuration, the acco
     "auth_timeout_days": 1,
 
 	"hive_api": "https://api.hive.blog",
-	"has_server": "ws://hive-auth.arcange.eu",
+	"has_server": "ws://has.hiveauth.com",
     "keys": "./keys.json"
 	"hideEncryptedData": true,
 
@@ -134,6 +135,8 @@ The `keys.json` file is where the private keys of the Hive accounts managed by t
 * `active`: (optional) the account active private key
 * `memo`: (optional) the account memo private key
 
+At least one account key should be present to enable authentication.
+
 **Example**
 
 ```
@@ -147,6 +150,10 @@ The `keys.json` file is where the private keys of the Hive accounts managed by t
         "name": "user2",
         "posting": "5...",
         "memo": "5..."
+    },
+    {
+        "name": "user3",
+        "posting": "5..."
     }
 ]
 ```
