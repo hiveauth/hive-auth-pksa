@@ -8,7 +8,7 @@ const WebSocket = require("ws")
 const ecc = require("@hiveio/hive-js/lib/auth/ecc")
 const memo = require("@hiveio/hive-js/lib/auth/memo")
 
-const { Client, PrivateKey, Tansaction } = require('@hiveio/dhive');
+const { Client, PrivateKey } = require('@hiveio/dhive');
 
 const KEY_TYPES = ["memo","posting","active"] // Types sorted by permission level - do not change it
 
