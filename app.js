@@ -89,12 +89,8 @@ function getPOK(name, value = Date.now()) {
 
 function hideEncryptedData(str) {
   if(config.hideEncryptedData) {
-    while(str.includes('"data":"')){
-      str = str.replace(/"data":"(.*?)"/,'"data":<...>')
-    }
-    while(str.includes('"pok":"')){
-      str = str.replace(/"pok":"(.*?)"/,'"pok":<...>')
-    }
+    str = str.replaceAll(/"data":"(.*?)"/g,'"data":<...>')
+    str = str.replaceAll(/"pok":"(.*?)"/g,'"pok":<...>')
   }
 	return str
 }
